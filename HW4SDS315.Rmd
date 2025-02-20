@@ -1,0 +1,131 @@
+---
+title: "Homework 2"
+author: "Trent Latz"
+date: "`r Sys.Date()`"
+output: 
+  pdf_document:
+---
+
+**Name:** Trent Latz **UT EID:** tjl2597 **GitHub Link:** https://github.com/trentjlatz/SDS315-HW4
+
+```{r, echo = FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      eval = TRUE, 
+                      warning = FALSE,
+                      message = FALSE,
+                      fig.align = "center", 
+                      R.options = list(max.print=50))
+suppressPackageStartupMessages(suppressWarnings({
+  library(tidyverse)
+  library(mosaic)
+}))
+gutenburg <- read.csv("letter_frequencies.csv")
+bsentences <- readLines("brown_sentences.txt")
+test_sentences <- c(
+  "She opened the book and started to read the first chapter, eagerly anticipating what might come next.",
+  "Despite the heavy rain, they decided to go for a long walk in the park, crossing the main avenue by the fountain in the center.",
+  "The museum’s new exhibit features ancient artifacts from various civilizations around the world.",
+  "He carefully examined the document, looking for any clues that might help solve the mystery.",
+  "The students gathered in the auditorium to listen to the guest speaker’s inspiring lecture.",
+  "Feeling vexed after an arduous and zany day at work, she hoped for a peaceful and quiet evening at home, cozying up after a quick dinner with some TV, or maybe a book on her upcoming visit to Auckland.",
+  "The chef demonstrated how to prepare a delicious meal using only locally sourced ingredients, focusing mainly on some excellent dinner recipes from Spain.",
+  "They watched the sunset from the hilltop, marveling at the beautiful array of colors in the sky.",
+  "The committee reviewed the proposal and provided many points of useful feedback to improve the project’s effectiveness.",
+  "Despite the challenges faced during the project, the team worked tirelessly to ensure its successful completion, resulting in a product that exceeded everyone’s expectations."
+)
+set.seed(022)
+```
+
+# Problem 1 - Iron Bank
+The null hypothesis is that the amount of trades flagged from the Iron Bank is the same as the baseline rate of 2.4%.
+The test statistic used is the observed number of flagged trades: 70 out of 2021
+```{r}
+trade_sim <- tibble(rbinom(100000, 2021, .024))
+trade_p <- mean(trade_sim >= 70)
+ggplot(data = trade_sim, aes(x = .data[[colnames(trade_sim)]]))+
+  geom_histogram(binwidth = 2, fill = "#CC5500", color = "black")+
+  geom_vline(xintercept = (70), color = "red", linetype = "dashed")+
+  labs(title = "Simulated Distribution of Flagged Trades",
+       x = "Number of Flagged Trades", 
+       y = "Frequency")
+trade_p
+```
+With a low p-value of .002, the null hypothesis that Iron Bank's rate of flagged trades is the same as the 2.4% baseline seems unlikely, suggesting that the trades are being flagged at a higher rate than expected due to random chance.
+
+# Problem 2 - Health Inspections
+The null hypothesis is that the Gourmet Bites' violation rates is the same as the citywide average of 3%.
+The test statistic used is the observed number of health violations: 8 out of 50 inspections. 
+```{r}
+health_sim <- tibble(violations = rbinom(100000, 50, .03))
+violation_p <- mean(health_sim >= 8)
+ggplot(data = health_sim, aes(x = violations))+
+  geom_histogram(binwidth = 1, fill = "#CC5500", color = "black")+
+  geom_vline(xintercept = (8), color = "red", linetype = "dashed")+
+  labs(title = "Simulated Distribution of Violations",
+       x = "Number of Violations", 
+       y = "Frequency")
+violation_p
+```
+With a p-value of .0002, the null hypothesis that Gourmet Bites' violation rate is equal to the citywide average of 3% seems to be extremely unlikely, as 8 violations out of 50 inspections is very unlikely to be due to chance.
+
+# Problem 3 - Evaluating Jury Selection for Bias
+H0: The null hypothesis is that the judge's jury selection process matches the county's population distribution.
+T: The test statistic used is the chi-square test, measuring deviation of observed from expected results.
+```{r}
+chi_squared_statistic = function(observed, expected) {
+  sum((observed - expected)^2 / expected)
+}
+observed_num <- c(85, 56, 59, 27, 13)
+expected_prop <- c(.3, .25, .2, .15, .1)
+expected_num <- sum(observed_num) * expected_prop
+chi_sqr <- chi_squared_statistic(observed_num, expected_num)
+chi_sqr
+chi_sqr_sim <- do(100000) * {
+  sim_num = rmultinom(1, sum(observed_num), expected_prop)
+  chi_squared_statistic(sim_num, expected_num)
+}
+ggplot(chi_sqr_sim) + 
+  geom_histogram(aes(x = result), bins = 30, fill = "#CC5500", color = "black") +
+  geom_vline(aes(xintercept = chi_sqr), color = "red", linetype = "dashed") +
+  labs(x = "Chi-Square Statistic", y = "Frequency", title = "Chi-Square Distribution")
+
+jury_p <- mean(chi_sqr_sim$result >= chi_sqr)
+jury_p
+```
+The graph above is our P(T | H0), with the red dash showing our test statistic(calculated chi-square). The p-value of .015 is less than .05, so the null hypothesis is rejected. The distribution of jurors for this judge is (statistically) significantly different from the county's population distribution, suggesting systematic bias in jury selection. While the results suggest potential bias, other factors such as the nature of the trial, the charges, or even the judge's selection methods could explain this dependency. To investigate further, we could look into those factors and compare them with other judges to see if they could explain this difference.
+
+# Problem 4: LLM watermarking
+
+```{r}
+calculate_chi_squared <- function(sentences, freq_table) {
+  chi_squared_values <- sapply(sentences, function(sentence) {
+    clean_sentence <- gsub("[^A-Za-z]", "", sentence)
+    clean_sentence <- toupper(clean_sentence)
+    observed_counts <- table(factor(strsplit(clean_sentence, "")[[1]], levels = freq_table$Letter))
+    total_letters <- sum(observed_counts)
+    expected_counts <- total_letters * freq_table$Probability
+    chi_squared_stat <- sum((observed_counts - expected_counts)^2 / expected_counts, na.rm = TRUE)
+    
+    return(chi_squared_stat)
+  })
+  
+  return(chi_squared_values)
+}
+chi_gutenburg <- calculate_chi_squared(bsentences, gutenburg)
+chi_gutenburg <- as.data.frame(chi_gutenburg)
+ggplot(chi_gutenburg, aes(x = chi_gutenburg)) + 
+  geom_histogram(bins = 25, fill = "#CC5500", color = "black") + 
+  labs(x = "Chi-squared Statistic", y = "Frequency", title = "Chi-squared Distribution of Brown Sentences")
+chi_test <- calculate_chi_squared(test_sentences, gutenburg)
+p_values <- sapply(chi_test, function(obs_chi_squared) {
+  p_value <- mean(chi_gutenburg$chi_gutenburg >= obs_chi_squared)
+  return(p_value)
+})
+p_value_table <- data.frame(
+  Chi_Squared = chi_test, 
+  P_Value = round(p_values, 3)
+)
+rownames(p_value_table) <- 1:10
+print(p_value_table)
+```
+The chi-squared analysis of the letter frequency distributions reveals which sentence is LLM-generated. The sentence with the highest chi-squared value is sentence number six, "Feeling vexed after an arduous and zany day at work, she hoped for a peaceful and quiet evening at home, cozying up after a quick dinner with some TV, or maybe a book on her upcoming visit to Auckland." This sentence is the one I originally thought was AI-generated by just lookin at it, and is also shown by being the lowest p value of .009.
